@@ -1,0 +1,5 @@
+{
+  "name": "account book",
+  "description": "A web application for small business owners to record and manage customer dues and payments, designed to work offline using local storage.",
+  "requestFramePermissions": []
+}
