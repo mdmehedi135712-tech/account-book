@@ -22,15 +22,8 @@ interface Customer {
   name: string;
   phone: string;
   address: string;
+  website?: string;
 }
-
-// --- Helper Functions ---
-const formatCurrency = (amount: number) => {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-  }).format(amount);
-};
 
 // --- Data Service (LocalStorage) ---
 const dataService = {
@@ -39,25 +32,6 @@ const dataService = {
   getTransactions: (): Transaction[] => JSON.parse(localStorage.getItem('transactions') || '[]'),
   saveTransactions: (transactions: Transaction[]) => localStorage.setItem('transactions', JSON.stringify(transactions)),
 };
-
-// --- Gemini Service ---
-const generateReminderMessage = async (customerName: string, dueAmount: number): Promise<string> => {
-  if (!process.env.API_KEY) {
-    return `Hi ${customerName}, this is a friendly reminder that you have an outstanding balance of ${formatCurrency(dueAmount)}. Please let us know if you have any questions. Thank you! (API Key not configured)`;
-  }
-  try {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    const result = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: `Generate a short, friendly, and professional payment reminder SMS message for a customer named ${customerName} who owes ${formatCurrency(dueAmount)}. Keep it concise and polite.`,
-    });
-    return result.text;
-  } catch (error) {
-    console.error("Error generating reminder:", error);
-    return `Error generating message. Please check your API key and network connection.`;
-  }
-};
-
 
 // --- SVG Icons ---
 const SunIcon: React.FC<{ className?: string }> = ({ className }) => (
@@ -87,7 +61,15 @@ const ArrowLeftIcon: React.FC<{ className?: string }> = ({ className }) => (
 
 // --- Components ---
 
-const Header: React.FC<{ title: string; onBack?: () => void; showSummaryButton?: boolean; onSummaryClick?: () => void; }> = ({ title, onBack, showSummaryButton, onSummaryClick }) => {
+const Header: React.FC<{
+    title: string;
+    onBack?: () => void;
+    showSummaryButton?: boolean;
+    onSummaryClick?: () => void;
+    showCurrencySelector?: boolean;
+    currency?: string;
+    onCurrencyChange?: (currency: string) => void;
+}> = ({ title, onBack, showSummaryButton, onSummaryClick, showCurrencySelector, currency, onCurrencyChange }) => {
     const [isDarkMode, setIsDarkMode] = useState(() => {
         const theme = localStorage.getItem('theme');
         return theme === 'dark' || (!theme && window.matchMedia('(prefers-color-scheme: dark)').matches);
@@ -104,52 +86,93 @@ const Header: React.FC<{ title: string; onBack?: () => void; showSummaryButton?:
     }, [isDarkMode]);
 
     const toggleTheme = () => setIsDarkMode(prev => !prev);
+    
+    const currencies = [
+        { code: 'AUD', name: 'Australian Dollar' },
+        { code: 'BDT', name: 'Bangladeshi Taka' },
+        { code: 'CAD', name: 'Canadian Dollar' },
+        { code: 'CHF', name: 'Swiss Franc' },
+        { code: 'CNY', name: 'Chinese Yuan' },
+        { code: 'EUR', name: 'Euro' },
+        { code: 'GBP', name: 'British Pound' },
+        { code: 'INR', name: 'Indian Rupee' },
+        { code: 'JPY', name: 'Japanese Yen' },
+        { code: 'USD', name: 'US Dollar' },
+    ].sort((a, b) => a.code.localeCompare(b.code));
+
 
     return (
-        <header className="bg-white dark:bg-gray-800 shadow-md sticky top-0 z-10 p-4 flex items-center justify-between">
+        <header className="sticky top-0 z-10 p-4 flex items-center justify-between text-white">
             <div className="flex items-center space-x-4">
                 {onBack && (
-                    <button onClick={onBack} className="text-gray-600 dark:text-gray-300 hover:text-primary-500 dark:hover:text-primary-400">
+                    <button onClick={onBack} className="text-white/80 hover:text-white">
                         <ArrowLeftIcon className="w-6 h-6" />
                     </button>
                 )}
-                <h1 className="text-xl font-bold text-gray-800 dark:text-white">{title}</h1>
+                <h1 className="text-xl font-bold">{title}</h1>
             </div>
             <div className="flex items-center space-x-2">
                  {showSummaryButton && (
-                    <button onClick={onSummaryClick} className="text-sm bg-primary-500 text-white px-3 py-1.5 rounded-md hover:bg-primary-600 transition-colors">
+                    <button onClick={onSummaryClick} className="text-sm bg-white/20 text-white px-3 py-1.5 rounded-md hover:bg-white/30 transition-colors">
                         Summary
                     </button>
                 )}
-                <button onClick={toggleTheme} className="p-2 rounded-full text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700">
-                    {isDarkMode ? <SunIcon className="w-6 h-6 text-yellow-400" /> : <MoonIcon className="w-6 h-6 text-gray-700" />}
+                {showCurrencySelector && onCurrencyChange && (
+                    <div className="w-24">
+                         <select
+                            value={currency}
+                            onChange={(e) => onCurrencyChange(e.target.value)}
+                            className="bg-white/20 border border-white/30 text-white text-sm rounded-lg focus:ring-primary-300 focus:border-primary-300 block w-full p-2"
+                            aria-label="Select currency"
+                        >
+                            {currencies.map(c => <option className="text-black" key={c.code} value={c.code}>{c.code}</option>)}
+                        </select>
+                    </div>
+                 )}
+                <button onClick={toggleTheme} className="p-2 rounded-full hover:bg-white/20">
+                    {isDarkMode ? <SunIcon className="w-6 h-6 text-yellow-300" /> : <MoonIcon className="w-6 h-6 text-white" />}
                 </button>
             </div>
         </header>
     );
 };
 
-const StatCard: React.FC<{ title: string; value: string; color: string }> = ({ title, value, color }) => (
-    <div className={`p-6 rounded-lg shadow-lg bg-white dark:bg-gray-800 border-l-4 ${color}`}>
-        <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase">{title}</h3>
-        <p className="mt-2 text-3xl font-semibold text-gray-900 dark:text-white">{value}</p>
+const StatCard: React.FC<{ title: string; value: string; }> = ({ title, value }) => (
+    <div className="p-4 rounded-2xl shadow-lg bg-white dark:bg-gray-800 text-center">
+        <p className="text-4xl font-bold text-primary-800 dark:text-white">{value}</p>
+        <h3 className="mt-1 text-xs font-semibold text-gray-500 dark:text-gray-300 uppercase">{title}</h3>
     </div>
 );
+
 
 const Modal: React.FC<{ isOpen: boolean; onClose: () => void; title: string; children: React.ReactNode }> = ({ isOpen, onClose, title, children }) => {
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center p-4">
+        <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex justify-center items-center p-4">
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-md max-h-[90vh] flex flex-col">
                 <div className="p-4 border-b dark:border-gray-700 flex justify-between items-center">
                     <h2 className="text-lg font-semibold text-gray-900 dark:text-white">{title}</h2>
-                    <button onClick={onClose} className="text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-white">&times;</button>
+                    <button onClick={onClose} className="text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-white text-2xl">&times;</button>
                 </div>
                 <div className="p-6 overflow-y-auto">
                     {children}
                 </div>
             </div>
+        </div>
+    );
+};
+
+const Avatar: React.FC<{ name: string; className?: string }> = ({ name, className }) => {
+    const initial = name ? name.charAt(0).toUpperCase() : '?';
+    const colors = [
+        'bg-red-500', 'bg-green-500', 'bg-blue-500', 'bg-yellow-500', 
+        'bg-indigo-500', 'bg-pink-500', 'bg-purple-500', 'bg-orange-500'
+    ];
+    const color = colors[initial.charCodeAt(0) % colors.length];
+    return (
+        <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-lg flex-shrink-0 ${color} ${className}`}>
+            {initial}
         </div>
     );
 };
@@ -162,6 +185,7 @@ const App: React.FC = () => {
     const [currentPage, setCurrentPage] = useState<'home' | 'customerDetails' | 'summary'>('home');
     const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
+    const [currency, setCurrency] = useState<string>(() => localStorage.getItem('currency') || 'BDT');
     
     // Modals state
     const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
@@ -180,6 +204,35 @@ const App: React.FC = () => {
     useEffect(() => {
         dataService.saveTransactions(transactions);
     }, [transactions]);
+    
+    useEffect(() => {
+        localStorage.setItem('currency', currency);
+    }, [currency]);
+
+    const formatCurrency = useCallback((amount: number) => {
+        return new Intl.NumberFormat('en-US', {
+            style: 'currency',
+            currency: currency,
+        }).format(amount);
+    }, [currency]);
+    
+    const generateReminderMessage = useCallback(async (customerName: string, dueAmount: number): Promise<string> => {
+      if (!process.env.API_KEY) {
+        return `Hi ${customerName}, this is a friendly reminder that you have an outstanding balance of ${formatCurrency(dueAmount)}. Please let us know if you have any questions. Thank you! (API Key not configured)`;
+      }
+      try {
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        const result = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: `Generate a short, friendly, and professional payment reminder SMS message for a customer named ${customerName} who owes ${formatCurrency(dueAmount)}. Keep it concise and polite.`,
+        });
+        return result.text;
+      } catch (error) {
+        console.error("Error generating reminder:", error);
+        return `Error generating message. Please check your API key and network connection.`;
+      }
+    }, [formatCurrency]);
+
 
     const getCustomerDue = useCallback((customerId: string) => {
         return transactions
@@ -264,6 +317,7 @@ const App: React.FC = () => {
         const [name, setName] = useState(customerToEdit?.name || '');
         const [phone, setPhone] = useState(customerToEdit?.phone || '');
         const [address, setAddress] = useState(customerToEdit?.address || '');
+        const [website, setWebsite] = useState(customerToEdit?.website || '');
         const [initialDue, setInitialDue] = useState(0);
         const [error, setError] = useState('');
 
@@ -275,9 +329,9 @@ const App: React.FC = () => {
             }
             setError('');
             if (customerToEdit) {
-                onUpdate({ id: customerToEdit.id, name, phone, address });
+                onUpdate({ id: customerToEdit.id, name, phone, address, website });
             } else {
-                onSave({ name, phone, address }, initialDue);
+                onSave({ name, phone, address, website }, initialDue);
             }
         };
 
@@ -295,6 +349,10 @@ const App: React.FC = () => {
                 <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Address</label>
                     <textarea value={address} onChange={e => setAddress(e.target.value)} className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-primary-500 focus:ring-primary-500"></textarea>
+                </div>
+                 <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Website</label>
+                    <input type="url" placeholder="https://example.com" value={website} onChange={e => setWebsite(e.target.value)} className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-primary-500 focus:ring-primary-500" />
                 </div>
                 {!customerToEdit && (
                      <div>
@@ -352,30 +410,45 @@ const App: React.FC = () => {
     const HomeScreen = () => {
         const filteredCustomers = customers.filter(c => c.name.toLowerCase().includes(searchTerm.toLowerCase()));
         return (
-            <div>
-                <Header title="Business Due Manager" showSummaryButton onSummaryClick={() => setCurrentPage('summary')}/>
-                <main className="p-4">
-                    <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-md mb-4">
-                        <h2 className="text-gray-500 dark:text-gray-400">Total Outstanding Dues</h2>
-                        <p className="text-3xl font-bold text-primary-600 dark:text-primary-400">{formatCurrency(totalDueAllCustomers)}</p>
+            <div className="flex flex-col h-screen">
+                <Header 
+                    title="Dashboard" 
+                    showSummaryButton 
+                    onSummaryClick={() => setCurrentPage('summary')}
+                    showCurrencySelector={true}
+                    currency={currency}
+                    onCurrencyChange={setCurrency}
+                />
+                <div className="p-4">
+                    <div className="grid grid-cols-2 gap-4">
+                        <StatCard title="All Referrals" value={customers.length.toString()} />
+                        <StatCard title="Today Referrals" value={"07"} />
+                    </div>
+                </div>
+
+                <main className="flex-1 bg-white dark:bg-gray-900 rounded-t-3xl shadow-2xl p-4 overflow-y-auto">
+                    <div className="flex justify-between items-center mb-4 text-gray-800 dark:text-white">
+                         <h2 className="text-lg font-semibold">New Referrals</h2>
+                         <button className="text-primary-500 font-semibold text-sm">All Referrals</button>
                     </div>
                     <input
                         type="text"
                         placeholder="Search customers..."
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
-                        className="w-full p-2 mb-4 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                        className="w-full p-2 mb-4 border rounded-md bg-gray-100 dark:bg-gray-800 dark:border-gray-700 text-gray-900 dark:text-white focus:ring-primary-500 focus:border-primary-500"
                     />
-                    <div className="space-y-3">
+                    <div className="space-y-2">
                         {filteredCustomers.length > 0 ? filteredCustomers.map(customer => {
                             const due = getCustomerDue(customer.id);
                             return (
-                                <div key={customer.id} onClick={() => { setSelectedCustomerId(customer.id); setCurrentPage('customerDetails'); }} className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow flex justify-between items-center cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
-                                    <div>
+                                <div key={customer.id} onClick={() => { setSelectedCustomerId(customer.id); setCurrentPage('customerDetails'); }} className="p-2 rounded-lg flex items-center cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+                                    <Avatar name={customer.name} />
+                                    <div className="ml-3 flex-grow">
                                         <p className="font-semibold text-gray-800 dark:text-white">{customer.name}</p>
-                                        <p className="text-sm text-gray-500 dark:text-gray-400">{customer.phone}</p>
+                                        <p className="text-sm text-gray-500 dark:text-gray-400">15 march 2019  1:49 PM</p>
                                     </div>
-                                    <p className={`font-bold ${due > 0 ? 'text-red-500' : 'text-green-500'}`}>
+                                    <p className={`font-bold text-lg ${due > 0 ? 'text-red-500' : 'text-green-500'}`}>
                                         {formatCurrency(due)}
                                     </p>
                                 </div>
@@ -411,18 +484,16 @@ const App: React.FC = () => {
         const due = getCustomerDue(customer.id);
 
         return (
-            <div>
+            <div className="flex flex-col h-screen">
                 <Header title={customer.name} onBack={() => setCurrentPage('home')} />
-                <main className="p-4 pb-28">
-                    <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-md mb-4">
-                        <div className="flex justify-between items-center">
-                            <div>
-                                <p className="text-sm text-gray-500 dark:text-gray-400">Total Due</p>
-                                <p className={`text-3xl font-bold ${due > 0 ? 'text-red-500' : 'text-green-500'}`}>{formatCurrency(due)}</p>
-                            </div>
-                        </div>
+                <div className="p-4">
+                     <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl shadow-md text-center">
+                        <p className="text-sm text-gray-500 dark:text-gray-400">Total Due</p>
+                        <p className={`text-4xl font-bold ${due > 0 ? 'text-red-500' : 'text-green-500'}`}>{formatCurrency(due)}</p>
                     </div>
+                </div>
 
+                <main className="flex-1 bg-white dark:bg-gray-900 rounded-t-3xl shadow-2xl p-4 overflow-y-auto pb-28">
                     <div className="mb-4 border-b border-gray-200 dark:border-gray-700">
                         <nav className="-mb-px flex space-x-6" aria-label="Tabs">
                             <button
@@ -452,7 +523,7 @@ const App: React.FC = () => {
                         {activeTab === 'transactions' && (
                             <div className="space-y-3">
                                 {customerTransactions.length > 0 ? customerTransactions.map(t => (
-                                    <div key={t.id} className="bg-white dark:bg-gray-800 p-3 rounded-lg shadow flex justify-between items-center">
+                                    <div key={t.id} className="dark:bg-gray-800 p-3 rounded-lg flex justify-between items-center">
                                         <div>
                                             <p className={`font-semibold ${t.type === TransactionType.CREDIT ? 'text-red-500' : 'text-green-500'}`}>
                                                 {t.type === TransactionType.CREDIT ? '+' : '-'} {formatCurrency(t.amount)}
@@ -462,46 +533,47 @@ const App: React.FC = () => {
                                         <p className="text-sm text-gray-400 dark:text-gray-500">{new Date(t.date).toLocaleDateString()}</p>
                                     </div>
                                 )) : (
-                                    <div className="text-center py-10 bg-white dark:bg-gray-800 rounded-lg shadow">
+                                    <div className="text-center py-10 rounded-lg">
                                         <p className="text-gray-500 dark:text-gray-400">No transactions yet.</p>
                                     </div>
                                 )}
                             </div>
                         )}
                         {activeTab === 'info' && (
-                             <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-md">
+                             <div className="p-4 rounded-lg">
                                 <div className="flex justify-between items-center mb-4">
                                     <h3 className="text-lg font-semibold text-gray-800 dark:text-white">Contact Details</h3>
-                                     <button onClick={() => {setEditingCustomer(customer); setIsCustomerModalOpen(true);}} className="text-sm bg-gray-200 dark:bg-gray-600 text-gray-800 dark:text-gray-200 px-3 py-1.5 rounded-md hover:bg-gray-300 dark:hover:bg-gray-500">
-                                        Edit Info
+                                     <button onClick={() => {setEditingCustomer(customer); setIsCustomerModalOpen(true);}} className="text-sm bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 px-3 py-1.5 rounded-md hover:bg-gray-300 dark:hover:bg-gray-600">
+                                        Edit
                                     </button>
                                 </div>
                                 <div className="text-sm text-gray-600 dark:text-gray-300 space-y-2">
                                     <p><strong>Phone:</strong> {customer.phone || 'N/A'}</p>
                                     <p><strong>Address:</strong> {customer.address || 'N/A'}</p>
+                                    <p><strong>Website:</strong> {customer.website ? <a href={customer.website} target="_blank" rel="noopener noreferrer" className="text-primary-500 hover:underline">{customer.website}</a> : 'N/A'}</p>
                                 </div>
                             </div>
                         )}
                     </div>
                 </main>
-                <div className="fixed bottom-0 left-0 right-0 p-4 bg-white dark:bg-gray-800 border-t dark:border-gray-700 grid grid-cols-3 gap-2">
+                <div className="fixed bottom-0 left-0 right-0 p-3 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm border-t dark:border-gray-700 grid grid-cols-3 gap-2">
                     <button
                         onClick={() => { setTransactionType(TransactionType.CREDIT); setIsTransactionModalOpen(true); }}
-                        className="w-full bg-red-500 text-white py-3 rounded-md shadow-md hover:bg-red-600"
+                        className="w-full bg-red-500 text-white py-3 rounded-md shadow-md hover:bg-red-600 font-semibold"
                     >
-                        Add Credit
+                        Credit
                     </button>
                     <button
                         onClick={() => { setTransactionType(TransactionType.PAYMENT); setIsTransactionModalOpen(true); }}
-                        className="w-full bg-green-500 text-white py-3 rounded-md shadow-md hover:bg-green-600"
+                        className="w-full bg-green-500 text-white py-3 rounded-md shadow-md hover:bg-green-600 font-semibold"
                     >
-                        Receive Payment
+                        Payment
                     </button>
                      <button
                         onClick={handleGenerateReminder}
-                        className="w-full bg-blue-500 text-white py-3 rounded-md shadow-md hover:bg-blue-600"
+                        className="w-full bg-blue-500 text-white py-3 rounded-md shadow-md hover:bg-blue-600 font-semibold"
                     >
-                        Gen. Reminder
+                        Reminder
                     </button>
                 </div>
             </div>
@@ -509,93 +581,51 @@ const App: React.FC = () => {
     };
     
     const SummaryScreen = () => {
-        const [filterCustomerId, setFilterCustomerId] = useState('all');
-        const [filterStartDate, setFilterStartDate] = useState('');
-        const [filterEndDate, setFilterEndDate] = useState('');
-
-        const { totalCredits, totalPayments } = useMemo(() => {
-            const filteredTransactions = transactions.filter(t => {
-                const transactionDate = new Date(t.date);
-                if (filterCustomerId !== 'all' && t.customerId !== filterCustomerId) {
-                    return false;
-                }
-                if (filterStartDate && transactionDate < new Date(filterStartDate)) {
-                    return false;
-                }
-                // Add 1 day to end date to include the whole day
-                if (filterEndDate) {
-                    const endDate = new Date(filterEndDate);
-                    endDate.setDate(endDate.getDate() + 1);
-                    if (transactionDate > endDate) {
-                        return false;
-                    }
-                }
-                return true;
-            });
-
-            return filteredTransactions.reduce((acc, t) => {
-                if (t.type === TransactionType.CREDIT) {
-                    acc.totalCredits += t.amount;
-                } else {
-                    acc.totalPayments += t.amount;
-                }
-                return acc;
-            }, { totalCredits: 0, totalPayments: 0 });
-        }, [transactions, filterCustomerId, filterStartDate, filterEndDate]);
-        
-        const outstandingDues = totalCredits - totalPayments;
-
-        const handleResetFilters = () => {
-            setFilterCustomerId('all');
-            setFilterStartDate('');
-            setFilterEndDate('');
-        };
-        
+        const customersWithDue = customers
+            .map(customer => ({
+                ...customer,
+                due: getCustomerDue(customer.id),
+            }))
+            .filter(customer => customer.due > 0)
+            .sort((a, b) => b.due - a.due);
+    
         return (
-            <div>
+             <div className="flex flex-col h-screen">
                 <Header title="Summary & Reports" onBack={() => setCurrentPage('home')} />
-                <main className="p-4 space-y-6">
-                    <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-md">
-                        <h3 className="text-lg font-semibold text-gray-800 dark:text-white mb-3">Filters</h3>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div>
-                                <label htmlFor="customer-filter" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Customer</label>
-                                <select 
-                                    id="customer-filter" 
-                                    value={filterCustomerId} 
-                                    onChange={e => setFilterCustomerId(e.target.value)}
-                                    className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-primary-500 focus:ring-primary-500"
-                                >
-                                    <option value="all">All Customers</option>
-                                    {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                                </select>
-                            </div>
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label htmlFor="start-date" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Start Date</label>
-                                    <input type="date" id="start-date" value={filterStartDate} onChange={e => setFilterStartDate(e.target.value)} className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-primary-500 focus:ring-primary-500" />
-                                </div>
-                                <div>
-                                    <label htmlFor="end-date" className="block text-sm font-medium text-gray-700 dark:text-gray-300">End Date</label>
-                                    <input type="date" id="end-date" value={filterEndDate} onChange={e => setFilterEndDate(e.target.value)} className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-primary-500 focus:ring-primary-500" />
-                                </div>
-                            </div>
-                        </div>
-                        <div className="mt-4 flex justify-end">
-                            <button onClick={handleResetFilters} className="text-sm bg-gray-200 dark:bg-gray-600 text-gray-800 dark:text-gray-200 px-3 py-1.5 rounded-md hover:bg-gray-300 dark:hover:bg-gray-500">
-                                Reset Filters
-                            </button>
-                        </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                        <StatCard title="Total Credits (Dues)" value={formatCurrency(totalCredits)} color="border-red-500" />
-                        <StatCard title="Total Payments Received" value={formatCurrency(totalPayments)} color="border-green-500" />
-                        <StatCard title="Total Outstanding Dues" value={formatCurrency(outstandingDues)} color="border-blue-500" />
-                    </div>
+                <main className="flex-1 bg-white dark:bg-gray-900 rounded-t-3xl shadow-2xl p-4 overflow-y-auto">
+                   <div className="grid grid-cols-2 gap-4 mb-6">
+                       <div className="p-4 rounded-2xl shadow-lg bg-gray-50 dark:bg-gray-800 text-center">
+                           <p className="text-3xl font-bold text-red-500">{formatCurrency(totalDueAllCustomers)}</p>
+                           <h3 className="mt-1 text-xs font-semibold text-gray-500 dark:text-gray-300 uppercase">Total Due</h3>
+                       </div>
+                        <div className="p-4 rounded-2xl shadow-lg bg-gray-50 dark:bg-gray-800 text-center">
+                           <p className="text-3xl font-bold text-primary-800 dark:text-white">{customers.length}</p>
+                           <h3 className="mt-1 text-xs font-semibold text-gray-500 dark:text-gray-300 uppercase">Total Customers</h3>
+                       </div>
+                  </div>
+                  
+                  <h2 className="text-lg font-semibold mb-4 text-gray-800 dark:text-white">Due by Customer</h2>
+                  
+                   <div className="space-y-2">
+                       {customersWithDue.length > 0 ? customersWithDue.map(customer => (
+                           <div key={customer.id} className="p-2 rounded-lg flex items-center bg-gray-50 dark:bg-gray-800/50">
+                               <Avatar name={customer.name} />
+                               <div className="ml-3 flex-grow">
+                                   <p className="font-semibold text-gray-800 dark:text-white">{customer.name}</p>
+                               </div>
+                               <p className="font-bold text-lg text-red-500">
+                                   {formatCurrency(customer.due)}
+                               </p>
+                           </div>
+                       )) : (
+                            <div className="text-center py-10">
+                                <p className="text-gray-500 dark:text-gray-400">No outstanding dues.</p>
+                           </div>
+                       )}
+                   </div>
                 </main>
             </div>
-        );
+        )
     };
 
     const renderPage = () => {
@@ -611,7 +641,7 @@ const App: React.FC = () => {
     };
 
     return (
-        <div className="bg-gray-100 dark:bg-gray-900 min-h-screen font-sans">
+        <div className="bg-gradient-to-b from-primary-500 to-primary-700 dark:from-primary-900 dark:to-primary-950 min-h-screen font-sans">
             {renderPage()}
 
             <Modal isOpen={isCustomerModalOpen} onClose={() => {setIsCustomerModalOpen(false); setEditingCustomer(null);}} title={editingCustomer ? "Edit Customer" : "Add New Customer"}>
